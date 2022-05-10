@@ -1,0 +1,1057 @@
+#%%
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import glob
+import os
+import re
+from pathlib import Path
+
+pd.options.display.float_format = '{:,.3f}'.format
+# !!!! ADJUST DIRECTORY !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+rootDir=Path("C:/Users/raine/OneDrive/Bureau/Wastewater/7.1.22/USE")
+minDepth = 60
+minFreq = 0.02
+minFreqForHeatMaps = 0.1
+minFreqForNonMultiplesOfThree = 0.5
+veryLowFreq = 0.01
+minIndelFrequency = 0.05
+minQuality = 23
+plotRange = (0,99999999)
+#plotRange = (21563,25384)
+ivarExtension = 'ivar.tsv'
+depthExtension = 'depth.tsv'
+pepperCountExtension = 'ppmov.txt'
+trimstatsExtension = 'TrimStats.txt'
+pepperPool = ['ArticV4.bed','Sars-Cov2.scheme.bed']
+removeNAlinesFromMerge = False # remove entire line if one NA in merge
+htmlOutFile = "summary.html"
+removeFirstCharsFromSampleName = True
+
+#class to hold all info for one sample
+class OneBCdata:
+    "Holds the data for each sample"
+    def __init__(self,sample : str,ivar,depths, trimstats, ppmov):
+        self.sample = sample
+        self.ivar = ivar
+        self.depths = depths
+        self.ppmov = ppmov
+        self.trimstats = trimstats
+    def getName(item):
+        return item.sample
+    
+
+
+class AmpliconDataList:
+    "Holds trimstats data"    
+    def __initialize(self, ts):
+        data = dict()
+        for i in range(0, len(ts.columns)-3, 6):
+            name = ts.columns.values[i]
+            pool1Count = int(ts.iloc[0, i+1])
+            pool2Count = int(ts.iloc[1, i+1])
+            #print(pool1Count,pool2Count)
+            #print(name,"****")
+            #print(list(ts.iloc[2, i:i+5]))
+            df = pd.DataFrame(ts.iloc[3:, i:i+5])
+            df.columns = list(ts.iloc[2, i:i+5])
+            df. dropna(inplace=True)
+            #print(df)
+            data[name] = AmpliconData(name,pool1Count,pool2Count,df)
+            #print(ts.iloc[i,0])
+        return data
+    def __init__(self, trimstats):
+        self.data = self.__initialize(trimstats)
+
+class AmpliconData:
+    def __init__(self, name : str, pool1Count : int, pool2Count : int, dataframe):
+        self.name = name
+        self.pool1Count = pool1Count
+        self.pool2Count = pool2Count
+        self.dataframe = dataframe
+      
+def dummySearchAlFX(df,pos,ref,alt):
+    filter = (df["POS"]== pos) & (df["REF"]== ref) & (df["ALT"]== alt)
+    #print(filter.head())
+    dummyDF = df[filter] #.where(filter, inplace = False).head()]
+    dummyDF.info()
+    dummyDF.head()
+#List of mutations (mainly variant mutations) that should be shown in heatmap if freq higher than a seperately defined cutoff    
+mutationsWithLowCutoffInHeatMap = []
+
+
+
+#%%
+
+sample_list=list()
+directories = ([f for f in rootDir.iterdir() if f.is_dir()])
+for f in directories:
+    #fileList=glob.glob(f.as_posix()+"/*.*")
+    fileList=[p.as_posix() for p in f.iterdir() if p.is_file()]
+    #print(fileList)
+    if ivarExtension in str(fileList) and depthExtension in str(fileList):
+        depth_data = pd.read_table([name for name in fileList if 'depth.tsv' in name][0], names = ["REF","POS","COUNT"],
+                                   dtype={"REF": "string", "POS" : "int", "COUNT" : "int"}
+                                  )
+        depth_data.index = depth_data.iloc[:,1]
+        iv_data = pd.read_table([i for i in fileList if ivarExtension in i][0], 
+                                dtype={"REGION": "string","POS": "int32","REF": "string",
+                                       "ALT": "string","REF_DP": "int32","REF_RV": "int32",
+                                       "REF_QUAL": "int","ALT_DP": "int32","ALT_RV": "int",
+                                       "ALT_QUAL": "int32","ALT_FREQ": "float32","TOTAL_DP": "int32",
+                                       "PVALL": "float32","PASS": "bool",
+                                       "GFF_FEATURE": "string", "REF_CODON": "string","REF_AA": "string",
+                                      "ALT_CODON": "string","ALT_AA": "string","PASS":"boolean", "PANGOSTR":"string",
+                                      "LINEAGES": "string"})
+        #TODO filter when depth is low and freq is very low, only supported by few reads and bad fwd/rev quality
+        #dummySearchAlFX(iv_data,21618,'C','T')
+        #isInNotDelLessThanThree = iv_data['ALT'].str.match(r'(^[+-]\w{1,2}$)') == False
+        #https://stackoverflow.com/questions/17696353/string-has-length-multiple-of-three
+        isNotIndelNotMultipleThree = (iv_data['ALT'].str.match(r'(^[+-])') == False) |  (iv_data['ALT'].str.match(r'(^[+-](\w{3})*$)') )
+        
+        #def indelFX(x):
+        #    if re.match(r'(^[+-])',x) and ((len(x) - 1) % 3 != 0) :
+        #        return False
+        #    else :
+        #        return True
+        #isNotWeirdInDel= iv_data['ALT'].apply(lambda x : indelFX(x)) # false if not multiple of 3 if indel
+        # TODO !!!!!!!!  CHECK WHETHER FILTER HERE NECESSARY !!!!!!!!!!!!!!!!
+        def depthFX(x):
+            return depth_data.loc[x,"COUNT"] >= minDepth
+        isHighDepth = iv_data['POS'].apply(lambda x : depthFX(x))
+        
+        #isHighDepth = iv_data["TOTAL_DP"] > minDepth        
+        iv_data = iv_data[
+            isHighDepth & isNotIndelNotMultipleThree]
+               #read seq depth data[]
+        
+        amplicon_data = pd.read_table([name for name in fileList if 'TrimStats.txt' in name][0])
+        amplicon_data_list = AmpliconDataList(amplicon_data)
+        base_name=os.path.basename(f.as_posix())
+        #read file with pepper counts
+        fl=glob.glob(f.as_posix()+"/*" + pepperCountExtension)
+        
+        pep = open(fl[0])
+        ppmov = int(pep.readline())
+        pep.close()
+        #add data for one sample to list
+        sample_list.append(OneBCdata(base_name,iv_data,depth_data,amplicon_data_list,ppmov))
+#Remove first two chars when samples are named A_, B_ ... for sorting
+if removeFirstCharsFromSampleName :
+    sample_list.sort(key=lambda x: x.sample)
+    for x in range(len(sample_list)):
+        if '_' in sample_list[x].sample[0:4] :
+            sample_list[x].sample = sample_list[x].sample.split("_", 1)[1]
+        #sample_list[x].sample = sample_list[x].sample[2:]
+print([s.sample for s in sample_list])
+
+
+
+#%%
+
+#merge data frames
+
+mer = sample_list[0].ivar
+ks = ['REGION',"POS","REF","ALT","GFF_FEATURE","REF_CODON", "REF_AA","ALT_CODON","ALT_AA","PANGOSTR","LINEAGES"]
+for i in range(1,len(sample_list)):
+    bc1 = "_" + sample_list[i-1].sample 
+    bc2 = ("_" + sample_list[i].sample) if i == len(sample_list)-1 else None
+    mer=mer.merge(sample_list[i].ivar,on=ks,how='outer'
+                                  ,suffixes=(bc1, bc2))
+    
+#sort by pos
+mer=mer.sort_values(by=['POS'])
+
+mer.reset_index(drop=True, inplace=True)
+
+# clear unneaded stuff
+for x in range(len(sample_list)):
+    sample_list[x].ivar = None
+#mer.info()
+
+#%%
+
+ #filters 
+ #remove duplicates with identical pos, ref, alt
+
+print("******************************")
+print("length dataframe before dupfilter " ,len(mer))
+dupFilter = mer.duplicated(["POS","REF","ALT"], keep = 'first') #create boolean list, keep first of duplicate
+mer = mer[~dupFilter] # filter dups
+print("length dataframe after dupfilter" ,len(mer))
+#df[df.eq('No').any(1)]
+def filterForHeatMapsFX(x):
+    return any((pd.isna(x["ALT_FREQ_"+ sample.sample]) == False 
+                                 and float(x["ALT_FREQ_"+ sample.sample]) >= minFreqForHeatMaps) for sample in sample_list)
+def filterFX(x):
+    #if any(x[["ALT_FREQ_" + y.sample]] > minQuality for y in sample_list)
+    ret = True
+    ind = re.match(r'(^[+-])', x['ALT'])
+    ret = ret and any((pd.isna(x["ALT_FREQ_"+ sample.sample]) == False 
+                                 and float(x["ALT_FREQ_"+ sample.sample]) >= minFreq) for sample in sample_list)
+
+    #fwd/rev balance
+#    for sample in sample_list:
+#        if x["REF_DP_" + sample] > 20 and x["ALT_DP_" + sample] > 20 :
+#            if x["ALT_RV_" + sample] == 0
+#                ret = False
+#            fr = x["ALT_DP_" + sample]/x["ALT_RV_" + sample]
+#            ret = ret &
+
+    if ind :
+        ret = ret and any((pd.isna(x["ALT_FREQ_"+ sample.sample]) == False 
+                                 and float(x["ALT_FREQ_"+ sample.sample]) >= minIndelFrequency) for sample in sample_list)
+    else :
+        ret = ret and any((pd.isna(x["ALT_QUAL_"+ sample.sample]) == False 
+                            and int(x["ALT_QUAL_"+ sample.sample])>minQuality) for sample in sample_list )
+    #remove lines with an NaN if option selected
+    if removeNAlinesFromMerge :
+        ret = ret & all((pd.isna(x["ALT_QUAL_"+ sample.sample]) == False) for sample in sample_list )
+    return ret
+passFilter = mer.apply(lambda x : filterFX(x),axis=1)
+passFilterForHeatMaps = mer.apply(lambda x : filterForHeatMapsFX(x),axis=1)
+
+mer = mer[passFilter]
+# fill up missing values
+for i in range(0,len(sample_list)):
+    #get depth dataframe
+    cov = sample_list[i].depths
+    #filter for depth, column 3 > minDepth
+    #cov = cov[cov.iloc[:, 2] > minDepth]
+    #rename columns#
+    cov.columns = ['', 'POS', 'TOTAL_DP_' + sample_list[i].sample]
+    #column in merged ivar to update with missing counts
+    col_toupdate = 'TOTAL_DP_' + sample_list[i].sample   
+    #https://stackoverflow.com/questions/55093574/fill-nans-within-1-column-of-a-df-via-lookup-to-another-df-via-pandas 
+    # replace NA in 'POS' column in merged ivar with data from depth dataframe
+    mer[col_toupdate]= np.where(mer[col_toupdate].isnull() ,mer['POS'].
+                                map(cov.set_index('POS')[col_toupdate]),mer[col_toupdate])    
+    #https://stackoverflow.com/questions/29177498/python-pandas-replace-nan-in-one-column-with-value-from-corresponding-row-of-sec
+    #update missing frequency values
+    #function returns 0 if FREQ for pos is NA and depth > mindepth otherwise return FREQ
+    def fx(x):
+        if (np.isnan(x['ALT_FREQ_'+sample_list[i].sample])) & (x['TOTAL_DP_'+ sample_list[i].sample] > minDepth):
+            return 0
+        else:
+            return x['ALT_FREQ_'+sample_list[i].sample]
+    mer['ALT_FREQ_'+sample_list[i].sample]=mer.apply(lambda x : fx(x),axis=1)
+    #col = 'POS'
+    #cols_to_replace = ['TOTAL_DP_' + sample_list[i].sample]
+    #mer.loc[mer[col].isin(cov[col]), cols_to_replace] = cov.loc[cov[col].isin(mer[col]),cols_to_replace].values
+    #print(cov)
+#write CSV
+mer.to_csv(rootDir.as_posix() + "/Ivar.csv" )
+#mer.info()
+
+merForHeatMaps = mer[passFilterForHeatMaps]
+print("length dataframe after filter " ,len(mer))
+print("length dataframe for heatmaps after filter " ,len(merForHeatMaps))
+print("******************************")
+
+
+
+#%%
+
+#merge requency columns into new dataframe
+#print([s.sample for s in sample_list])
+
+def mergeFreqs(df, doWriteCSV):
+    retval = df[["ALT_FREQ_"+ x.sample for x in [row for row in sample_list]]]
+    #dfp.index=mer["REF"] + mer["POS"].astype(str) + mer["ALT"]
+    index = df["REF"] + df["POS"].astype(str) + df["ALT"]
+    retval.columns = retval.columns.str.split('FREQ_').str[-1]
+    indexLong = index +  np.where(pd.isna(df["PANGOSTR"]) , "", "_" + df["PANGOSTR"]) + np.where(pd.isna(df["LINEAGES"]), "", "_" + df["LINEAGES"])
+    retval.index = indexLong    
+    if doWriteCSV:
+        retval.to_csv(rootDir.as_posix() + "/IvarLight.csv" )
+    #show only first part of orf muts
+    index = index +  np.where(df["PANGOSTR"].str.startswith('nuc:', na=True),                           "", "_" + df["PANGOSTR"].str.split(',').str[0]) 
+    df.index = index
+    retval.index = index
+    return retval
+
+    
+dfp = mergeFreqs(mer,True)
+dfp.set_axis([x.sample for x in sample_list], axis=1,inplace=True)
+dfpForHeatMaps = mergeFreqs(merForHeatMaps,False)
+dfpForHeatMaps.set_axis([x.sample for x in sample_list], axis=1,inplace=True)
+mask=dfpForHeatMaps.index.str.extract(r'(\d+)',expand=False).astype(int)
+mask = (mask > plotRange[0]) & (mask < plotRange[1])
+dfpForHeatMaps = dfpForHeatMaps[mask]
+#dfp.to_csv(rootDir.as_posix() + "/IvarLight_Pauline.csv" )
+#ivarlight = pd.concat([dfp, pd.Series(np.where(pd.isna(mer["PANGOSTR"]), "", "_" + mer["PANGOSTR"])) + pd.Series(np.where(pd.isna(mer["LINEAGES"]), "", "_" + mer["LINEAGES"]))], axis=1) 
+
+#dfp.index= dfp.index +  np.where(pd.isna(mer["PANGOSTR"]), "", "_" + mer["PANGOSTR"]) + np.where(pd.isna(mer["LINEAGES"]), "", "_" + mer["LINEAGES"])
+
+#(("_" + mer["PANGOSTR"]) if pd.isna(mer["PANGOSTR"]).item() == False else "")  + (("_" + mer["LINEAGES"]) if pd.isna(mer["LINEAGES"]).item() == False else "")
+
+
+#print(dfp.head())
+#dfp
+
+# mask pos range
+#dfp=dfp[dfp.index.str.match(r'(\w\d+[+-]\w{1,2}$)') == False ]  --- done before
+
+#generate hover text and generate dictionary for lookup of hover in clustermap
+hoverDictionary = dict() # dict to look up hoover in clustermap
+def hoverTextFX(x):
+    #quality
+    ret = "<b>Sample: </b>" + sample.sample
+    ret += "<br><b>Frequency: </b>" + "{:.3f}".format(x['ALT_FREQ_'+sample.sample])
+    ret += "<br><b>Mutation: </b>" + x["REF"] + str(x["POS"]) + x["ALT"]
+    ret += "" if pd.isna(x["PANGOSTR"]) else "_" + x["PANGOSTR"] 
+    ret += "" if pd.isna(x["LINEAGES"]) else "_" +  x["LINEAGES"] + "<br>"
+    ret += "REF/ALT quality: "+ (str(int(x['REF_QUAL_'+sample.sample]))  if pd.isna(x['REF_QUAL_'+sample.sample])==False else "NA")
+    ret +=  "/" + (str(int(x['ALT_QUAL_'+sample.sample]))  if pd.isna(x['ALT_QUAL_'+sample.sample])==False else "NA")
+    #seq depths
+    ret += "<br>" + "REF/ALT depth (FWD,REV): ("+ (str(int(x['REF_DP_'+sample.sample]-x['REF_RV_'+sample.sample]))  if pd.isna(x['REF_DP_'+sample.sample])==False else "NA")
+    ret += "," + (str(int(x['REF_RV_'+sample.sample]))  if pd.isna(x['REF_RV_'+sample.sample])==False else "NA")
+    #fwd_rev_ratio_ref = "&infin;" if x['REF_RV_'+sample.sample] == 0 else ()
+    ret += ")/(" + (str(int(x['ALT_DP_'+sample.sample] - x['ALT_RV_'+sample.sample]))  if pd.isna(x['ALT_DP_'+sample.sample])==False else "NA") + ","
+    ret += (str(int(x['ALT_RV_'+sample.sample]))  if pd.isna(x['ALT_RV_'+sample.sample])==False else "NA") + ")"
+    #print(sample.sample,ret)
+    hoverDictionary[x.name] = ret
+    return ret
+
+dfp_hover = pd.DataFrame()
+for sample in sample_list:
+       dfp_hover[sample.sample] = merForHeatMaps.apply(lambda x : hoverTextFX(x),axis=1)
+        
+
+dfp_hover = dfp_hover[mask]
+#print(hoverDictionary)
+
+
+#%%
+
+
+import plotly.graph_objects as go
+from plotly.offline import iplot
+import plotly.figure_factory as ff
+
+VOCs = {
+   "Omicron": ["C1029T","C10449A","C14408T","A18163G","A21764-NNNNNN","G21986-NNNNNN","G21987A","G29187A","G22578A","T22673C","T22679C","C22686T","G22813T",
+               "G22898A","T22882G","G22992A","C22995A","A23013C",
+                  "A23040G","A23055G","A23063T","T23075C","A23403G","C23525T","T23599G","C23604A","C23854A","G23948T",
+               "C24130A","A24424T","T24469A","C26270T","A26530G","C26577G","G26709A",
+                "C28311T","G28361-NNNNNNNNN","G28881A","G28883C" ],
+      "BA.1": ["C21762T","C21846T","A22193-NNN","G22898A","G23048A","C23202A","C24503T"],
+      "BA.1.1": ["G22599A"],
+      "BA.2" : ["C2790T","G4184A","C9344T","C9534T","C19955T","C21618T","T21632-NNNNNNNN","T22200G","A22688G","C22674T","G22775A","A22786C","C26060T","A29510C"],
+      "Delta": ["G4181T","C6402T","C7124T","G9053T","A11201G","A11332G","C14408T","G15451A","C16466T","C19220T","C21618G",
+                "G21987A","A23403G","G29187A","T22917G","C22995A","C23604G","G24410A","C25469T","T26767C","T27638C","C27752T","C27874T,""A28461G","G28881T",
+                "G28916T","G29402T"],
+      "alpha": ["A23063T","A23403G","C23604A"],
+      "beta": ["G22813T","A23063T","A23403G"],
+      "gamma": ["A23063T","A23403G"]
+}
+
+dfA = dfpForHeatMaps
+index = [re.sub(r'[N]{7,}',"N7+", s) for s in dfA.index] # replace >= 7N by N7+
+index = [re.sub(r',.+',"", s) for s in index] #remove everything after the ","
+
+newIndexlist = list()
+for ind in dfA.index :
+   for voc in VOCs:
+       vocMutList = VOCs[voc]
+       if any(sub in ind for sub in vocMutList):
+            ind = voc + ":" + ind            
+   newIndexlist.append(ind)
+
+dfA.set_index(pd.Index(newIndexlist), inplace=True) # set new index
+
+
+#index = [s.split(",")[0] for s in index] ,\w+
+#print([s.split(",")[0] for s in dfp.index])
+heatmap_fig = go.Figure(data=go.Heatmap(
+        z=dfA,
+        y=dfA.index,
+        x=dfp.columns,colorscale=[(0, "blue"), (0.2, "red"), (1, "yellow")],
+        xgap = 2,
+        ygap = 2,
+        colorbar = dict(title='Mut Freq'),
+        customdata= dfp_hover,
+        hovertemplate =
+#            '<i>Site</i>: %{x}'+
+#            '<br>Mutation: %{y}'+
+#            '<br><b>Frequency= </b>: %{z}' +
+            '<b>%{customdata}</b>'
+        
+        ),
+    layout=go.Layout(plot_bgcolor='rgb(100, 100,100)',height=len(dfA)*20,width=dfA.shape[1]*50 + 400
+                    #title_text="Plotly heatmap"
+                    )
+    )
+#custom hover:  https://plotly.com/python/hover-text-and-formatting/
+# custom hover: https://stackoverflow.com/questions/45569092/plotly-python-heatmap-change-hovertext-x-y-z
+#custom hover: https://community.plotly.com/t/heatmap-changing-x-y-and-z-label-on-tooltip/23588/4
+#    hovertemplate =
+#    '<i>Price</i>: x'+
+#    '<br><b>Frequency= </b>: y<br>',
+    #+ '<b>%{text}</b>',
+    #text = ['Custom text {}'.format(i + 1) for i in range(5)],
+
+
+#,
+#layout=go.Layout(plot_bgcolor=’#777777’)))
+#  layout=plot_bgcolor='rgb(230, 230,230)')))
+heatmap_fig.show()
+
+#heatmap_fig.write_html(rootDir.as_posix() + "/heatmap.html")
+
+
+#%%
+
+import pandas as pd
+import dash_bio
+transpose = True
+
+# color_map= [
+#        [0.0, '#3e4444'],
+#        [0.25, '#feb236'],
+#        [0.5, '#ff7b25'],
+#        [1.0, '#d64161']       
+#    ],
+#print(dfp[dfp['Aeroport_4.1.22_BC30']==0].head())
+#print(dfp.shape[1]*100,dfp.shape[0]*30)
+dfz = dfA.transpose()  if  transpose else dfA
+columns = list(dfz.columns)
+rows = list(dfz.index)
+
+cluster_fig = dash_bio.Clustergram(
+    center_values= False,
+    data=dfz.fillna(-0.0001).loc[rows].values,
+    row_labels=rows,
+    column_labels=columns,
+    height= dfz.shape[0]*40 +350 if transpose else dfp.shape[0]*20 ,
+    width=dfz.shape[1]*20 if transpose else dfp.shape[1]*100 + 150,
+    color_threshold={
+        'row': 0.3,
+        'col': 0.3
+    },
+   color_list={
+#        'row': ['#636EFA', '#00CC96', '#19D3F3'],
+#        'col': ['#AB63FA', '#EF553B'],
+        'bg': 'white'
+    },
+    color_map= [[0.0, 'grey'],[0.00011, 'rgb(0,0,100)'], [0.3, 'rgb(255,0,0)'], [1.0, 'rgb(255,255,0)']],
+#    color_map= [
+#        [0.0, "blue"],
+#        [1.0, "red"]
+#    ],
+    #color_map= [(0.0, "black"),(0.05, "blue"), (0.2, "red"), (1, "yellow")],
+
+    line_width=1.5,
+    display_ratio=[0.1, 0.4] if transpose else [0.4, 0.1],
+    paper_bg_color = 'rgb(240, 240,240)'
+)
+cluster_fig.update_traces(colorbar_orientation='h', selector=dict(type='heatmap'),
+                          xgap = 2,
+                          ygap = 2,
+                 #customdata= hoverDictionary, 
+                 #hovertemplate ='<i>Site</i>: %{customdata[%{z}]}' + '<br><b>Frequency= </b>: %{z}' 
+                 hovertemplate = '<b>Site= </b>: %{y}<br>' +'<i>Mutation</i>: %{x}' +  '<br><b>Frequency= </b>: %{z}'
+                 )
+#cluster_fig.update_layout(plot_bgcolor='rgb(100, 100,100)')
+cluster_fig.show()
+#cluster_fig.write_html(rootDir.as_posix() + "/heatmap2.html")
+#cluster_fig.write_image(rootDir.as_posix() + "/heatmap2.pdf")
+
+
+#%%
+
+from plotly.subplots import make_subplots
+import math
+nl = [x.sample for x in sample_list]
+nCols = 5
+nRows = math.ceil(len(sample_list)/nCols)
+#nRows = len(sample_list)//nCols
+depthplots_fig = make_subplots(rows=nRows, cols=nCols, start_cell="top-left",
+                   subplot_titles= nl)
+#fig = go.Figure()
+for i in range(0,len(sample_list)):
+    row = math.ceil((i+1)/nCols)
+    #row = int((i)//nCols + 1)
+    col = i%nCols + 1
+    trace = go.Scatter(y = sample_list[i].depths.iloc[:, 2],
+                             x =  sample_list[i].depths.iloc[:, 1],
+                             line=dict(
+                                color='Navy', #'rgb(160, 10, 10)',
+                                width=1.5
+                    ))
+    
+    depthplots_fig.add_vrect(
+        x0=21563, x1=25384,
+        fillcolor="LightYellow", opacity=0.5,
+        layer="below", line_width=0
+        )
+    depthplots_fig.add_trace(trace,
+                  row = row , col = col)
+#depthplots_fig.update_traces(marker=dict(color="RoyalBlue"))
+depthplots_fig.update_layout(width=400*nCols,
+    height=600*nRows, title_text="Sequencing Depth (nReads per position)",
+    yaxis = dict(
+        showgrid = True
+    ),  title = ""
+)
+depthplots_fig.update_layout(showlegend=False)
+depthplots_fig.update_yaxes(type="log")
+depthplots_fig.show()
+#fig.write_html(rootDir.as_posix() + "/seqdepth.html")
+
+#%%
+
+
+#https://stackoverflow.com/questions/63082393/python-multiple-split-violine-plot-overlayed
+#https://plotly.com/python/subplots/
+from plotly.subplots import make_subplots
+
+violinsPerRow=5
+nRows = math.ceil(len(sample_list)/violinsPerRow)
+
+#nRows = len(sample_list)//7
+#violinsPerRow=len(sample_list)/nRows + 1 
+violinsPlot_fig = make_subplots(rows=nRows, cols=violinsPerRow, start_cell="top-left")
+spikeRange = (21563,25384)
+#fig = go.Figure()
+for i in range(0,len(sample_list)):
+    #row = int((i)//violinsPerRow + 1)
+    row = math.ceil((i+1)/nCols)
+    col = i%nCols + 1
+    violinsPlot_fig.add_trace(go.Violin(y = sample_list[i].depths.iloc[:, 2],  meanline_visible = True, 
+                            x0= sample_list[i].sample,
+                            box_visible=True,
+                            points=False,
+                            width=1,
+                            showlegend = i == 0,
+                            name='Sars-Cov-2',
+                               legendgroup='Sars-Cov-2', scalegroup='Sars-Cov-2', 
+                        side='negative',
+                        line_color='blue'
+                           ),
+                  row = row , col = col
+                     )
+    masklow= sample_list[i].depths.iloc[:, 1] >  spikeRange[0]
+    maskhigh= sample_list[i].depths.iloc[:, 1] <  spikeRange[1]
+    #print(type(masklow))
+    #print(mask)
+    spikedepths =   sample_list[i].depths.iloc[:, 2]       
+    spikedepths = spikedepths[masklow & maskhigh]
+    
+    violinsPlot_fig.add_trace(go.Violin(y = spikedepths,  meanline_visible = True,
+                            showlegend = i == 0,
+                        legendgroup='Spike', scalegroup='Spike', x0= sample_list[i].sample,
+                            box_visible=True,
+                            points=False,
+                             width=1,
+                             name='Spike',
+                        side='positive',
+                        line_color='orange'),
+                  row=row, col = col
+                 )
+
+violinsPlot_fig.update_traces(meanline_visible=True)
+violinsPlot_fig.update_layout(violingap=0, violinmode='overlay',width=violinsPerRow*350,
+    height=math.ceil(len(sample_list)/violinsPerRow)*400,
+    title_text="",
+    yaxis = dict(
+        showgrid = True
+    )
+)
+#fig.update_yaxes(type="log", range=[-2,5]) # log range: 10^0=1, 10^5=100000
+violinsPlot_fig.show()
+#violinsPlot_fig.write_html(# "/seqdepth.html")
+
+#%%
+
+#peppercount
+
+peppercounts = list()
+peppersamples = list()
+
+for s in sample_list: 
+    #print ([name for name in s.trimstats.data.keys() if name in pepperPool][0])
+    if len([name for name in s.trimstats.data.keys() if name in pepperPool]) > 0 :
+        peppersamples.append(s.sample)
+        peppercounts.append(s.ppmov if s.ppmov == 0 else s.trimstats.data[[name for name in s.trimstats.data.keys() if name in pepperPool][0]].pool1Count/s.ppmov)
+pepperDF = pd.DataFrame(peppercounts)
+
+pepperDF.index = peppersamples
+pepperDF.columns = ['SarsCov/ppmov ratio']
+pepperDF['SarsCov/ppmov ratio'] = pepperDF['SarsCov/ppmov ratio'].round(decimals=2).astype(str)
+pepperDF.info()
+display(pepperDF)
+import plotly.express as px
+#import plotly.graph_objects as go
+#fig = go.Figure(data=[go.Table(#header=dict(values=['Sample', 'SARSCov/ppmov']),
+#                 cells=dict(zip(pepperDF.index,pepperDF[0])))
+#                     ])
+#fig.show()
+
+pepperfig = px.histogram(pepperDF, x=pepperDF.index, y='SarsCov/ppmov ratio', text_auto=".3s" #, title="Sars-Cov-2/pepper count ratios"
+    )
+pepperfig.update_layout(
+    width=200 + len(pepperDF.index)*50,
+    height=800,
+    title="",
+    xaxis_title="Sample",
+    yaxis_title='SarsCov/ppmov ratio',
+)
+
+pepperfig.show()
+
+
+#%%
+
+#class to hold info for one Variant (mean, SE,n, boxplot,wasfiltered)
+class VariantData:
+    "Holds the data for each Variant and site"
+    def __init__(self,mean : float, se : float, n : int, boxplot):
+        self.mean = mean
+        self.se = se
+        self.n = n
+        self.box = boxplot
+    def getName(item):
+        return item.sample
+
+
+VOCs = {
+  "Omicron": ["C10449A","G22578A","T22679C","C22686T","G22992A","A23013C",
+                  "A23040G","A23055G","T23075C","C23525T","T23599G","C23854A","G23948T",
+                "A24424T","T24469A","C28311T" ],
+      "BA.1": ["C21762T","C21846T","G23048A","C23202A","C24503T"],
+      "BA.1.1": ["G22599A"],
+      "BA.2" : ["C2790T","G4184A","C9344T","C9534T","C19955T","T22200G","A22688G","G22775A","A22786C","C26060T","A29510C"],
+      "Delta": ["G4181T","C6402T","C7124T","G9053T","A11201G","G15451A","C16466T","C19220T","C21618G","T22917G","C23604G","G24410A","C25469T","A28461G","G28881T","G28916T","G29402T"]
+}
+colors=['purple', 'DarkSlateBlue','DarkOrchid','LightBlue','orange']
+errorbarColors = ['white', 'black','black','black','black']
+parents = ["","Omicron","BA.1","Omicron",""]
+samples = dfp.columns
+variants = [x for x in VOCs] 
+detailedCounts = dict()
+#TRUE false indicates whether value was used for mean
+detailedCountsMask = dict()
+for voc in VOCs:
+    df_variant = dfp[dfp.index.isin([str for str in dfp.index if any(sub in str for sub in VOCs[voc])])]
+    df_Mask = pd.DataFrame(columns = df_variant.columns, index = df_variant.index)
+    detailedCounts[voc] = df_variant
+    detailedCountsMask[voc] = df_Mask
+#stores mean and SD in object
+variantData  = pd.DataFrame(columns = df_variant.columns, index = variants)
+
+#https://www.analyticsvidhya.com/blog/2021/05/feature-engineering-how-to-detect-and-remove-outliers-with-python-code/
+def getBoxPlot(x1,x2):
+    fig = go.Figure()
+    fig.add_trace(go.Box(y=x1,boxpoints='all',name="Unfiltered ("+ str(len(x1)) + ')',showlegend=False))
+    if x2.empty == False:
+        fig.add_trace(go.Box(y=x2,boxpoints='all',name="filtered ("+ str(len(x2)) + ')',showlegend=False))
+    fig.update_layout(height=400, width = 200)
+    #fig.show()
+    return fig
+for voc in VOCs:
+    for sample in samples:
+       x = detailedCounts[voc][sample]
+       x_new = pd.Series([])
+       mask = [True]*len(x)
+       if len(x) >= 4:
+            m = x.mean(skipna=True)
+            sd = x.std(skipna=True)
+            #maskTmp = x.between(x.quantile(.10), x.quantile(.90)) or x.between(m - 3*std, m + 3*std)
+            maskTmp = x.between(m - 1.5*sd, m + 1.5*sd)
+            x_new = x[mask] # without outliers           
+            if (len(x_new)/len(x) >= 0.8) & (len(x_new) > 3):
+                filtered = True
+                mask = maskTmp
+       if len(x) > 1: 
+           box = getBoxPlot(x, x[mask]).to_html(full_html=False, include_plotlyjs='cdn')
+       else:
+            box = ""
+       x = x[mask]
+       detailedCountsMask[voc][sample]=mask
+       variantData[sample].loc[voc]= VariantData(x.mean(skipna=True),
+                                     np.nan if len(x) <= 1 else x.std(skipna=True)/math.sqrt(len(x)),
+                                     len(x), box)
+      #correct BA.1 + BA.2 to omicron total
+
+r = [1 if ((x.mean + v.mean) == 0) else (y.mean/(v.mean + x.mean)) for v, x, y in zip(variantData.loc["BA.1"],variantData.loc["BA.2"], variantData.loc["Omicron"] )]
+variantData.loc["BA.1"] = [VariantData(i.mean * j,i.se * j,i.n,i.box ) for i, j in zip(variantData.loc["BA.1"], r)]
+variantData.loc["BA.2"] = [VariantData(i.mean * j,i.se * j,i.n,i.box ) for i, j in zip(variantData.loc["BA.2"], r)]
+
+#for sample in samples:
+#    variantData[sample] = [[detailedCounts[voc][sample].mean(axis=0,skipna=True),
+#                            np.nan if len(detailedCounts[voc][sample]) == 0 else detailedCounts[voc][sample].std(axis=0,skipna=True)/math.sqrt(len(detailedCounts[voc][sample])),
+#                            len(detailedCounts[voc][sample])] for voc in VOCs]   
+
+#create sunburst plots
+
+nCols = 4
+nRows = math.ceil(len(sample_list)/nCols)
+specs =  [[{"type": "domain"}]*nCols]*nRows
+variantPies_fig = make_subplots(rows=nRows, cols=nCols,
+                                subplot_titles= samples,
+                   #subplot_titles= ["<b>" + s + "</b>" for s in samples],
+                   horizontal_spacing = 0.00,
+                                vertical_spacing = 0.00,
+                                specs = specs )
+
+#for i in range(0,len(samples)):
+#    print(samples[i])
+#    print([v[0] for v in variantData[samples[i]]])
+
+variantPieList = dict()                
+for i in range(0,len(samples)):
+    row = math.ceil((i+1)/nCols)
+    col = i%nCols + 1
+    
+    hoverdata = [[v.mean, v.se, v.n] for v in variantData[samples[i]]]
+    trace = go.Sunburst(labels=variants, parents = parents, values=[v.mean for v in variantData[samples[i]]],
+              branchvalues="total",
+                       customdata= hoverdata,
+                       hovertemplate='<b>Variant: %{label}<b><br>Frequency: %{value}<br>SE: %{customdata[1]:.3f}<br>n mutations: %{customdata[2]}' )
+    figForList = go.Figure(trace)
+    figForList.update_traces(marker=dict(colors=colors,line=dict(color='#000000', width=0.5)))
+    figForList.update_layout(height=250, width = 250 ,margin = dict(t=10, l=0, r=0, b=10))#,title=samples[i],margin = dict(t=0, l=0, r=0, b=0))
+    #print(samples[i])
+    #print(variantData[samples[i]])
+    #figForList.show()
+    variantPieList[samples[i]] = figForList.to_html(full_html=False, include_plotlyjs='cdn')
+    
+#    variantPies_fig.add_trace(trace,
+#                  row = row , col = col)
+#variantPies_fig.update_layout(height=2200, width = 1000)
+#variantPies_fig.update_layout(margin = dict(t=0, l=0, r=0, b=0))
+#for i in range(len(variantPies_fig.layout.annotations)):
+#    variantPies_fig.layout.annotations[i].update(y=-.125, font={'size': 12})
+#variantPies_fig.show()
+#print(variantData)
+def fnct(x) :
+    print('********')
+    print(x[0])
+    print('----------')
+    print([v[0] for v in x])
+    return x
+variantDataTr = variantData.transform(lambda x : [v.mean for v in x])
+variantDataErr = variantData.transform(lambda x : [v.se for v in x])
+print(variantDataTr.dtypes)
+#variantDataTr.loc["BA.1"] = variantDataTr.loc["BA.1"] - variantDataTr.loc["BA.1.1"]
+#print(variantDataTr.loc["BA.1"])
+#https://dev.to/fronkan/stacked-and-grouped-bar-charts-using-plotly-python-a4p
+
+#print(variantData.loc[variants[0]])
+data=[
+        go.Bar(
+            name=variants[0],
+            x=variantDataTr.columns,
+            y=variantDataTr.loc[variants[0]],
+            offsetgroup=0,
+            marker_color=colors[0],
+            error_y=dict(type='data', array=variantDataErr.loc[variants[0]]),
+            error_y_color=errorbarColors[0]
+        ),
+       go.Bar(
+            name=variants[4],
+            x=variantDataTr.columns,
+            y=variantDataTr.loc[variants[4]],
+            offsetgroup=0,
+            base=variantDataTr.iloc[0],
+            marker_color=colors[4],
+            error_y=dict(type='data', array=variantDataErr.loc[variants[4]]),
+            error_y_color=errorbarColors[4]
+        ),
+       go.Bar(
+            name=variants[1],
+            x=variantDataTr.columns,
+            y=variantDataTr.loc[variants[1]],
+            offsetgroup=1,
+            marker_color=colors[1],
+            error_y=dict(type='data', array=variantDataErr.loc[variants[1]]),
+            error_y_color=errorbarColors[1]
+        ),
+           go.Bar(
+            name=variants[3],
+            x=variantDataTr.columns,
+            y=variantDataTr.loc[variants[3]],
+               base=variantDataTr.iloc[1],
+            offsetgroup=1,
+            marker_color=colors[3],
+            error_y=dict(type='data', array=variantDataErr.loc[variants[3]]),
+            error_y_color=errorbarColors[3]
+        ),
+           go.Bar(
+            name=variants[2],
+            x=variantDataTr.columns,
+            y=variantDataTr.loc[variants[2]],
+            offsetgroup=1,
+            marker_color= colors[1],#'rgba(0,0,0,0)',
+            marker_pattern_shape="."
+            #error_y=dict(type='data', array=variantDataErr.loc[variants[2]]),
+            #error_y_color=errorbarColors[2]
+        )]    
+
+figVariantHisto = go.Figure(data=data)
+figVariantHisto.update_layout(height=1500, width = len(variantDataTr.columns)*60 + 200)
+figVariantHisto.show() 
+##fig = px.bar(variantDataTr, x=variantDataTr.index, y=variantDataTr.columns, title="Variants",text_auto='.2f')
+#fig.update_traces(texttemplate=’%{percent:.3f}’)
+#fig.update_traces(marker=dict(line=dict(color='#000000', width=0.5)))
+#fig.update_layout(height=1500, width = 1200) 
+#fig.show()  
+
+
+#%%
+
+
+from jinja2 import Template
+
+plotrg = "all" if ((plotRange[0] < 2) & (plotRange[1] > 29902)) else str(plotRange[0]) + "-"  + str(plotRange[1])
+minIndelFreq = minFreq if minIndelFrequency < minFreq  else minIndelFrequency 
+#samples_gridded = np.array_split([s.sample for s in sample_list],3)
+x=[s.sample for s in sample_list]
+samples_gridded = [x[4*i:4*(i+1)] for i in range(math.ceil(len(x)/4))]
+
+#https://realpython.com/primer-on-jinja-templating/
+template = """
+    <html>
+    <head>
+    <style>
+        body {
+          background-color: white;
+        }
+        
+h2 {
+ color: darkblue;
+ text-align: left;
+}
+table {
+  border-collapse: separate;
+  border-spacing: 10px;
+  /* Apply cell spacing */
+}
+ td {
+  padding: 15px;
+  text-align: center;
+}
+
+
+.styled-table {
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 0.9em;
+    font-family: sans-serif;
+    min-width: 400px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+}
+
+.styled-table thead tr {
+    background-color: #009879;
+    color: #ffffff;
+    text-align: left;
+}
+
+.styled-table th,
+.styled-table td {
+    padding: 12px 15px;
+}
+
+.styled-table tbody tr {
+    border-bottom: 1px solid #dddddd;
+}
+
+.styled-table tbody tr:nth-of-type(even) {
+    background-color: #f3f3f3;
+}
+
+.styled-table tbody tr:last-of-type {
+    border-bottom: 2px solid #009879;
+}
+
+.styled-table tbody tr.active-row {
+    font-weight: bold;
+    color: #009879;
+}
+
+        h1 {
+          color: maroon;
+          margin-left: 40px;
+        }
+        
+.maingrid {
+        display: grid;
+    align-content: start;
+        grid-template-columns: repeat(2, [col] auto ) ;
+        grid-gap: 10px;
+        width: 100%;
+    }
+        
+   .divTable{
+	display: table;
+	width: 100%;
+
+}
+.divTableRow {
+	display: table-row;
+}
+.divTableHeading {
+	background-color: #EEE;
+	display: table-header-group;
+}
+.divTableCell, .divTableHead {
+    text-align: center;
+	border: 1px solid #999999;
+	display: table-cell;
+	padding: 2px 3px;
+}
+.divTableHeading {
+	background-color: #EEE;
+	display: table-header-group;
+	font-weight: bold;
+}
+.divTableFoot {
+	background-color: #EEE;
+	display: table-footer-group;
+	font-weight: bold;
+}
+.divTableBody {
+	display: table-row-group;
+}     
+</style>
+</head>
+    
+    <body>
+   <h2>Samples:</h2>
+    <table style="width:100%">
+    
+    {% for onelist in samples %}
+    <tr>
+    {% for oneitem in onelist %}
+    <td>{{oneitem}}</td> 
+    {% endfor %}
+    </tr>
+    {% endfor %}
+    </h3>
+    </table>
+    <div>
+    <h2>Parameters</h2>
+    <table style="width:50%">
+    <tr><td>Min depth:</td><td>{{minDepth}}</td></tr>
+    <tr><td>Min frequency:</td><td>{{minFreq}}</td></tr>
+    <tr><td>Min frequency Heatmap:</td><td>{{minFreqForHeatMaps}}</td></tr>
+
+    <tr><td>Min indel frequency:</td><td>{{minIndelFreq}}</td></tr>
+    <tr><td>Range:</td><td>{{plotrg}}</td></tr>
+    </table>
+    </div>
+    <h2>Heatmap</h2>
+    {{ heatmap }}
+    <h2>Clustered Heatmap</h2>
+    {{ clustermap }}
+    <h2>Sequencing depths</h2>
+    {{ depth }}
+    <h2>Sequencing depths frequencies</h2>
+    {{ violins }}
+    <h2>Sars-Cov-2/pepper count ratios</h2>    
+    {{ pepperDF.to_html(classes='styled-table') | safe}}
+    {{ pepperfig }}
+
+
+<h2>Variants</h2>
+
+<table>
+ {% for onelist in samples %}
+ <tr>
+ {% for oneitem in onelist %}
+ <td>
+ <b>{{oneitem}}</b><br>
+    {{variantPieList[oneitem]}}
+ </td>
+ {% endfor %}
+ </tr>
+ {% endfor %}
+</table>>
+{{figVariantHisto}}
+
+<h3>Detailed Counts</h3>
+    {% for oneVariant in variantdetailedCounts %}    
+    <h2>{{oneVariant}}</h2>
+    <table class="styled-table">
+    <tr>
+    <th></th>
+    {% for oneSample in variantCounts %}
+    <th><b>{{oneSample}}</b> </th>
+    {% endfor %}
+    </tr> <!–– end divTableRow -->
+    {% for onemut in variantdetailedCounts[ oneVariant].index %}
+        <tr>
+        <th><b>{{onemut}}</b></th>
+        <!–– print counts -->
+        {% for oneSample in variantCounts %}
+            <td>
+            {% if variantdetailedCountsMask[oneVariant][oneSample].loc[onemut] == false %}
+                <font color="red">{{"%.3f"|format(variantdetailedCounts[oneVariant][oneSample].loc[onemut])}}</font>
+            {% else %}
+                {{"%.3f"|format(variantdetailedCounts[oneVariant][oneSample].loc[onemut])}}
+            {% endif %}
+            </td>
+        {% endfor %}
+        </tr> 
+       
+    {% endfor %}    <!–– end loop over mutations -->
+     <!–– add row with means -->
+        <tr>
+        <th><b>Mean</b></th>
+        {% for oneSample in variantCounts %}
+          <td>  <b>{{"%.3f"|format(variantCounts[oneSample].loc[oneVariant].mean) }}</b></td>
+        {% endfor %}
+        </tr>
+             <!–– add row with SE -->
+        <tr>
+        <th><b>SE</b></th>
+        {% for oneSample in variantCounts %}
+          <td>  {{"%.3f"|format(variantCounts[oneSample].loc[oneVariant].se) }}</td>
+        {% endfor %}
+        </tr>
+         <tr>
+        <th></th>
+        {% for oneSample in variantCounts %}
+          <td>  {{variantCounts[oneSample].loc[oneVariant].box}}</td>
+        {% endfor %}
+        </tr>
+
+    </table> <!–– end one variant table -->
+     {% endfor %}
+
+<br>
+
+    </body>
+    </html>
+"""
+t = Template(template)
+s = t.render(samples=samples_gridded,
+             minDepth = minDepth,
+             minFreq = minFreq,
+             minFreqForHeatMaps = minFreqForHeatMaps,
+             minIndelFreq = minIndelFreq,
+             plotrg = plotrg,
+             heatmap=heatmap_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+             clustermap = cluster_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+             depth = depthplots_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+             violins = violinsPlot_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+             pepperfig = pepperfig.to_html(full_html=False, include_plotlyjs='cdn'),
+             pepperDF = pepperDF,
+             variantPieList = variantPieList,
+             #variants = variantPies_fig.to_html(full_html=False, include_plotlyjs='cdn'),
+             variantdetailedCounts = detailedCounts, #contains all individual var mut counts for sample
+             variantdetailedCountsMask = detailedCountsMask,
+             variantCounts = variantData, # contains means for each sample
+             figVariantHisto = figVariantHisto.to_html(full_html=False, include_plotlyjs='cdn')
+            )
+
+with open(rootDir.as_posix() + "/" + htmlOutFile, 'w') as f:
+    f.write(s)
+
+
+
+#%%
