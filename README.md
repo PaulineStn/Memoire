@@ -2,9 +2,9 @@
 Annexe mémoire de M2
 *Annexe*
 
-###Langages utilisés
+### Langages utilisés
 Python
-###Modules Python
+### Modules Python
 pandas
 numpy
 dash-bio
@@ -12,5 +12,5 @@ matplotlib.pyplot
 seaborn
 
 
-###Auteurs
+### Auteurs
 Pauline Steichen et Rainer Waldmann
