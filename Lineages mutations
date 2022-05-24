@@ -1,3 +1,6 @@
+Les mutations permettant de définir les  lignées sont disponibles sur la classification Pangolin de SARS-CoV-2 (github.com/cov-lineages/pangolin).
+J'ai utilisé un set de mutations qui sont le plus souvent retrouvées dans le variant d'intérêt pour mes analyses (données de fréquence de variation selon le vartiant sur www.outbreak.info) : 
+
 Omicron
 C10449A_orf1ab:P3395H
 G22578A_spike:G339D
