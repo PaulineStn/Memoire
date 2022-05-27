@@ -1,0 +1,39 @@
+#!/bin/bash
+javabin=/opt/java/jdk-14.0.1/bin/java
+samtools=/data/RAINER/bin/samtools-1.14/bin/samtools
+sarsCovRef=/data/RAINER/bin/artic-ncov2019/primer_schemes/SARS-CoV-2/V4/SARS-CoV-2.reference.fasta
+fastpProg=/data/RAINER/bin/fastp/fastp
+minimapProg=/data/RAINER/bin/minimap2build/minimap2-2.17_x64-linux/minimap2
+gff=/data/RAINER/minimap_indices/SarsCov/GCF_009858895.2_ASM985889v3_genomic.gff
+sarscovppmovstats="ppmov.csv"
+FastpQV=14
+cd $1
+cd ..
+mkdir analysis
+outdir=./analysis/$2
+mkdir $outdir
+
+
+pigz -dc $1/*.gz | $fastpProg --thread 50 --stdin --stdout -q $FastpQV | pigz > $outdir/fastq.fastq.gz
+ 
+
+$minimapProg -a -x map-ont -t 90 $sarsCovRef $outdir/fastq.fastq.gz | $samtools view -bS -F 4 - | $samtools sort -o $outdir/mapped.bam -         
+
+$javabin -jar /home/rainer/apps/wastewater/CovidVariantFilter-1.0.jar  trimprimers -i $outdir/mapped.bam -b /home/rainer/apps/wastewater/Bedfiles -f 35  -n -s
+rm $outdir/mapped.bam
+foundbams=($(find  $outdir/ -name "*.bam" -type f ))
+                                for bam in "${foundbams[@]}"
+                                do
+                                                samtools sort $bam -o $bam.sorted.bam
+                                                mv $bam.sorted.bam $bam
+                                                samtools index $bam                                     
+                                done
+$samtools depth $outdir/mappedTrimmed.bam > $outdir/depth.tsv
+echo " ******** IVAR ***********************************************"
+$samtools mpileup  -A -d 600000 -B -Q 0   $outdir/mappedTrimmed.bam |  ivar variants -p $outdir/ivarDel -q 20 -t 0.003 -r $sarsCovRef -g $gff
+echo "***** IvarAdd_AA_mut-1.0.jar ***********************************************"
+$javabin -jar /home/rainer/apps/wastewater/IvarAdd_AA_mut-1.0.jar -i $outdir/ivarDel.tsv -o $outdir/ivar.tsv -g /home/rainer/apps/wastewater/SarsCov2_modified.gff -v /home/rainer/apps/wastewater/variant_jsons/
+rm $outdir/ivarDel.tsv
+$minimapProg -a -x map-ont -t 90 /data/RAINER/minimap_indices/SarsCov/sarsppmov.fa $outdir/fastq.fastq.gz | grep ppmov | wc -l > $outdir/ppmov.txt
+
+rm $outdir/fastq.fastq.gz
