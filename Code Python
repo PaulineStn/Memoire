@@ -10,8 +10,8 @@ import re
 from pathlib import Path
 
 pd.options.display.float_format = '{:,.3f}'.format
-# !!!! ADJUST DIRECTORY !!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-rootDir=Path("C:/Users/raine/OneDrive/Bureau/Wastewater/7.1.22/USE")
+
+rootDir=Path("C:\\Users\\IPMC\\Documents\\PS\\Ivar_script\\Nice")
 minDepth = 60
 minFreq = 0.02
 minFreqForHeatMaps = 0.1
@@ -52,15 +52,10 @@ class AmpliconDataList:
             name = ts.columns.values[i]
             pool1Count = int(ts.iloc[0, i+1])
             pool2Count = int(ts.iloc[1, i+1])
-            #print(pool1Count,pool2Count)
-            #print(name,"****")
-            #print(list(ts.iloc[2, i:i+5]))
             df = pd.DataFrame(ts.iloc[3:, i:i+5])
             df.columns = list(ts.iloc[2, i:i+5])
             df. dropna(inplace=True)
-            #print(df)
             data[name] = AmpliconData(name,pool1Count,pool2Count,df)
-            #print(ts.iloc[i,0])
         return data
     def __init__(self, trimstats):
         self.data = self.__initialize(trimstats)
@@ -74,7 +69,6 @@ class AmpliconData:
       
 def dummySearchAlFX(df,pos,ref,alt):
     filter = (df["POS"]== pos) & (df["REF"]== ref) & (df["ALT"]== alt)
-    #print(filter.head())
     dummyDF = df[filter] #.where(filter, inplace = False).head()]
     dummyDF.info()
     dummyDF.head()
@@ -90,7 +84,6 @@ directories = ([f for f in rootDir.iterdir() if f.is_dir()])
 for f in directories:
     #fileList=glob.glob(f.as_posix()+"/*.*")
     fileList=[p.as_posix() for p in f.iterdir() if p.is_file()]
-    #print(fileList)
     if ivarExtension in str(fileList) and depthExtension in str(fileList):
         depth_data = pd.read_table([name for name in fileList if 'depth.tsv' in name][0], names = ["REF","POS","COUNT"],
                                    dtype={"REF": "string", "POS" : "int", "COUNT" : "int"}
@@ -145,8 +138,6 @@ if removeFirstCharsFromSampleName :
         if '_' in sample_list[x].sample[0:4] :
             sample_list[x].sample = sample_list[x].sample.split("_", 1)[1]
         #sample_list[x].sample = sample_list[x].sample[2:]
-print([s.sample for s in sample_list])
-
 
 
 #%%
@@ -240,7 +231,7 @@ for i in range(0,len(sample_list)):
     #col = 'POS'
     #cols_to_replace = ['TOTAL_DP_' + sample_list[i].sample]
     #mer.loc[mer[col].isin(cov[col]), cols_to_replace] = cov.loc[cov[col].isin(mer[col]),cols_to_replace].values
-    #print(cov)
+
 #write CSV
 mer.to_csv(rootDir.as_posix() + "/Ivar.csv" )
 #mer.info()
@@ -288,7 +279,6 @@ dfpForHeatMaps = dfpForHeatMaps[mask]
 #(("_" + mer["PANGOSTR"]) if pd.isna(mer["PANGOSTR"]).item() == False else "")  + (("_" + mer["LINEAGES"]) if pd.isna(mer["LINEAGES"]).item() == False else "")
 
 
-#print(dfp.head())
 #dfp
 
 # mask pos range
@@ -311,7 +301,6 @@ def hoverTextFX(x):
     #fwd_rev_ratio_ref = "&infin;" if x['REF_RV_'+sample.sample] == 0 else ()
     ret += ")/(" + (str(int(x['ALT_DP_'+sample.sample] - x['ALT_RV_'+sample.sample]))  if pd.isna(x['ALT_DP_'+sample.sample])==False else "NA") + ","
     ret += (str(int(x['ALT_RV_'+sample.sample]))  if pd.isna(x['ALT_RV_'+sample.sample])==False else "NA") + ")"
-    #print(sample.sample,ret)
     hoverDictionary[x.name] = ret
     return ret
 
@@ -321,7 +310,6 @@ for sample in sample_list:
         
 
 dfp_hover = dfp_hover[mask]
-#print(hoverDictionary)
 
 
 #%%
@@ -364,7 +352,6 @@ dfA.set_index(pd.Index(newIndexlist), inplace=True) # set new index
 
 
 #index = [s.split(",")[0] for s in index] ,\w+
-#print([s.split(",")[0] for s in dfp.index])
 heatmap_fig = go.Figure(data=go.Heatmap(
         z=dfA,
         y=dfA.index,
@@ -408,14 +395,6 @@ import pandas as pd
 import dash_bio
 transpose = True
 
-# color_map= [
-#        [0.0, '#3e4444'],
-#        [0.25, '#feb236'],
-#        [0.5, '#ff7b25'],
-#        [1.0, '#d64161']       
-#    ],
-#print(dfp[dfp['Aeroport_4.1.22_BC30']==0].head())
-#print(dfp.shape[1]*100,dfp.shape[0]*30)
 dfz = dfA.transpose()  if  transpose else dfA
 columns = list(dfz.columns)
 rows = list(dfz.index)
@@ -454,10 +433,7 @@ cluster_fig.update_traces(colorbar_orientation='h', selector=dict(type='heatmap'
                  #hovertemplate ='<i>Site</i>: %{customdata[%{z}]}' + '<br><b>Frequency= </b>: %{z}' 
                  hovertemplate = '<b>Site= </b>: %{y}<br>' +'<i>Mutation</i>: %{x}' +  '<br><b>Frequency= </b>: %{z}'
                  )
-#cluster_fig.update_layout(plot_bgcolor='rgb(100, 100,100)')
 cluster_fig.show()
-#cluster_fig.write_html(rootDir.as_posix() + "/heatmap2.html")
-#cluster_fig.write_image(rootDir.as_posix() + "/heatmap2.pdf")
 
 
 #%%
@@ -512,10 +488,10 @@ violinsPerRow=5
 nRows = math.ceil(len(sample_list)/violinsPerRow)
 
 #nRows = len(sample_list)//7
-#violinsPerRow=len(sample_list)/nRows + 1 
+
 violinsPlot_fig = make_subplots(rows=nRows, cols=violinsPerRow, start_cell="top-left")
 spikeRange = (21563,25384)
-#fig = go.Figure()
+
 for i in range(0,len(sample_list)):
     #row = int((i)//violinsPerRow + 1)
     row = math.ceil((i+1)/nCols)
@@ -535,8 +511,7 @@ for i in range(0,len(sample_list)):
                      )
     masklow= sample_list[i].depths.iloc[:, 1] >  spikeRange[0]
     maskhigh= sample_list[i].depths.iloc[:, 1] <  spikeRange[1]
-    #print(type(masklow))
-    #print(mask)
+
     spikedepths =   sample_list[i].depths.iloc[:, 2]       
     spikedepths = spikedepths[masklow & maskhigh]
     
@@ -572,7 +547,6 @@ peppercounts = list()
 peppersamples = list()
 
 for s in sample_list: 
-    #print ([name for name in s.trimstats.data.keys() if name in pepperPool][0])
     if len([name for name in s.trimstats.data.keys() if name in pepperPool]) > 0 :
         peppersamples.append(s.sample)
         peppercounts.append(s.ppmov if s.ppmov == 0 else s.trimstats.data[[name for name in s.trimstats.data.keys() if name in pepperPool][0]].pool1Count/s.ppmov)
@@ -697,9 +671,7 @@ variantPies_fig = make_subplots(rows=nRows, cols=nCols,
                                 vertical_spacing = 0.00,
                                 specs = specs )
 
-#for i in range(0,len(samples)):
-#    print(samples[i])
-#    print([v[0] for v in variantData[samples[i]]])
+
 
 variantPieList = dict()                
 for i in range(0,len(samples)):
@@ -714,19 +686,9 @@ for i in range(0,len(samples)):
     figForList = go.Figure(trace)
     figForList.update_traces(marker=dict(colors=colors,line=dict(color='#000000', width=0.5)))
     figForList.update_layout(height=250, width = 250 ,margin = dict(t=10, l=0, r=0, b=10))#,title=samples[i],margin = dict(t=0, l=0, r=0, b=0))
-    #print(samples[i])
-    #print(variantData[samples[i]])
-    #figForList.show()
     variantPieList[samples[i]] = figForList.to_html(full_html=False, include_plotlyjs='cdn')
     
-#    variantPies_fig.add_trace(trace,
-#                  row = row , col = col)
-#variantPies_fig.update_layout(height=2200, width = 1000)
-#variantPies_fig.update_layout(margin = dict(t=0, l=0, r=0, b=0))
-#for i in range(len(variantPies_fig.layout.annotations)):
-#    variantPies_fig.layout.annotations[i].update(y=-.125, font={'size': 12})
-#variantPies_fig.show()
-#print(variantData)
+
 def fnct(x) :
     print('********')
     print(x[0])
@@ -737,10 +699,8 @@ variantDataTr = variantData.transform(lambda x : [v.mean for v in x])
 variantDataErr = variantData.transform(lambda x : [v.se for v in x])
 print(variantDataTr.dtypes)
 #variantDataTr.loc["BA.1"] = variantDataTr.loc["BA.1"] - variantDataTr.loc["BA.1.1"]
-#print(variantDataTr.loc["BA.1"])
 #https://dev.to/fronkan/stacked-and-grouped-bar-charts-using-plotly-python-a4p
 
-#print(variantData.loc[variants[0]])
 data=[
         go.Bar(
             name=variants[0],
@@ -793,12 +753,7 @@ data=[
 
 figVariantHisto = go.Figure(data=data)
 figVariantHisto.update_layout(height=1500, width = len(variantDataTr.columns)*60 + 200)
-figVariantHisto.show() 
-##fig = px.bar(variantDataTr, x=variantDataTr.index, y=variantDataTr.columns, title="Variants",text_auto='.2f')
-#fig.update_traces(texttemplate=’%{percent:.3f}’)
-#fig.update_traces(marker=dict(line=dict(color='#000000', width=0.5)))
-#fig.update_layout(height=1500, width = 1200) 
-#fig.show()  
+figVariantHisto.show()  
 
 
 #%%
