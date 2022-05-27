@@ -12,6 +12,7 @@ Europe
 
 ### Amplification de la région Spike
 La séquence et la position des amorces utilisées est disponibles au format .bed
+
 MN908947.3 correspond à la référence Genbank de SARS-CoV-2
 Pool A (1Kb)
 Pool B (1Kb)
@@ -28,7 +29,7 @@ matplotlib.pyplot
 seaborn
 
 ### Calcul des variants
-Liste de mutations 
+Liste de mutations utilisées pour calculer les proportions des variants circulants 
 
 ### Auteurs
 Pauline Steichen et Rainer Waldmann
