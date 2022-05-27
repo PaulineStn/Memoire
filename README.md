@@ -20,7 +20,9 @@ Pool C (2Kb)
 Pool D (4Kb)
 
 ### Langages utilisés
-Python
+Python (code Python)
+Bash (Script Bash)
+
 ### Modules Python
 pandas
 numpy
