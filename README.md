@@ -8,7 +8,7 @@
 
 Comptes-rendus générés pour Nice (Station d'épuration et aéroport) et pour l'Europe.
 Les sites étudiés en Europe sont : 
--Montpellier, Cergy (France), 
+-Nice, Montpellier, Cergy, Mulhouse (France), 
 -Hof, Rosenthal, Braunschweig (Allemagne),
 -Prague (République Tchèque), 
 -Rome, Venise (Italie), 
