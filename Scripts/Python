@@ -479,103 +479,14 @@ depthplots_fig.show()
 
 #%%
 
-
-#https://stackoverflow.com/questions/63082393/python-multiple-split-violine-plot-overlayed
-#https://plotly.com/python/subplots/
 from plotly.subplots import make_subplots
 
-violinsPerRow=5
-nRows = math.ceil(len(sample_list)/violinsPerRow)
 
-#nRows = len(sample_list)//7
-
-violinsPlot_fig = make_subplots(rows=nRows, cols=violinsPerRow, start_cell="top-left")
-spikeRange = (21563,25384)
-
-for i in range(0,len(sample_list)):
-    #row = int((i)//violinsPerRow + 1)
-    row = math.ceil((i+1)/nCols)
-    col = i%nCols + 1
-    violinsPlot_fig.add_trace(go.Violin(y = sample_list[i].depths.iloc[:, 2],  meanline_visible = True, 
-                            x0= sample_list[i].sample,
-                            box_visible=True,
-                            points=False,
-                            width=1,
-                            showlegend = i == 0,
-                            name='Sars-Cov-2',
-                               legendgroup='Sars-Cov-2', scalegroup='Sars-Cov-2', 
-                        side='negative',
-                        line_color='blue'
-                           ),
-                  row = row , col = col
-                     )
-    masklow= sample_list[i].depths.iloc[:, 1] >  spikeRange[0]
-    maskhigh= sample_list[i].depths.iloc[:, 1] <  spikeRange[1]
 
     spikedepths =   sample_list[i].depths.iloc[:, 2]       
     spikedepths = spikedepths[masklow & maskhigh]
-    
-    violinsPlot_fig.add_trace(go.Violin(y = spikedepths,  meanline_visible = True,
-                            showlegend = i == 0,
-                        legendgroup='Spike', scalegroup='Spike', x0= sample_list[i].sample,
-                            box_visible=True,
-                            points=False,
-                             width=1,
-                             name='Spike',
-                        side='positive',
-                        line_color='orange'),
-                  row=row, col = col
-                 )
 
-violinsPlot_fig.update_traces(meanline_visible=True)
-violinsPlot_fig.update_layout(violingap=0, violinmode='overlay',width=violinsPerRow*350,
-    height=math.ceil(len(sample_list)/violinsPerRow)*400,
-    title_text="",
-    yaxis = dict(
-        showgrid = True
-    )
-)
-#fig.update_yaxes(type="log", range=[-2,5]) # log range: 10^0=1, 10^5=100000
-violinsPlot_fig.show()
-#violinsPlot_fig.write_html(# "/seqdepth.html")
-
-#%%
-
-#peppercount
-
-peppercounts = list()
-peppersamples = list()
-
-for s in sample_list: 
-    if len([name for name in s.trimstats.data.keys() if name in pepperPool]) > 0 :
-        peppersamples.append(s.sample)
-        peppercounts.append(s.ppmov if s.ppmov == 0 else s.trimstats.data[[name for name in s.trimstats.data.keys() if name in pepperPool][0]].pool1Count/s.ppmov)
-pepperDF = pd.DataFrame(peppercounts)
-
-pepperDF.index = peppersamples
-pepperDF.columns = ['SarsCov/ppmov ratio']
-pepperDF['SarsCov/ppmov ratio'] = pepperDF['SarsCov/ppmov ratio'].round(decimals=2).astype(str)
-pepperDF.info()
-display(pepperDF)
-import plotly.express as px
-#import plotly.graph_objects as go
-#fig = go.Figure(data=[go.Table(#header=dict(values=['Sample', 'SARSCov/ppmov']),
-#                 cells=dict(zip(pepperDF.index,pepperDF[0])))
-#                     ])
-#fig.show()
-
-pepperfig = px.histogram(pepperDF, x=pepperDF.index, y='SarsCov/ppmov ratio', text_auto=".3s" #, title="Sars-Cov-2/pepper count ratios"
-    )
-pepperfig.update_layout(
-    width=200 + len(pepperDF.index)*50,
-    height=800,
-    title="",
-    xaxis_title="Sample",
-    yaxis_title='SarsCov/ppmov ratio',
-)
-
-pepperfig.show()
-
+#%
 
 #%%
 
@@ -661,32 +572,30 @@ variantData.loc["BA.2"] = [VariantData(i.mean * j,i.se * j,i.n,i.box ) for i, j 
 
 #create sunburst plots
 
-nCols = 4
-nRows = math.ceil(len(sample_list)/nCols)
-specs =  [[{"type": "domain"}]*nCols]*nRows
-variantPies_fig = make_subplots(rows=nRows, cols=nCols,
-                                subplot_titles= samples,
+#nCols = 4
+#nRows = math.ceil(len(sample_list)/nCols)
+#specs =  [[{"type": "domain"}]*nCols]*nRows
+#variantPies_fig = make_subplots(rows=nRows, cols=nCols,
+                                #subplot_titles= samples,
                    #subplot_titles= ["<b>" + s + "</b>" for s in samples],
-                   horizontal_spacing = 0.00,
-                                vertical_spacing = 0.00,
-                                specs = specs )
+                   #horizontal_spacing = 0.00,
+                                #vertical_spacing = 0.00,
+                                #specs = specs )
 
-
-
-variantPieList = dict()                
-for i in range(0,len(samples)):
-    row = math.ceil((i+1)/nCols)
-    col = i%nCols + 1
+#variantPieList = dict()                
+#for i in range(0,len(samples)):
+   # row = math.ceil((i+1)/nCols)
+   # col = i%nCols + 1
     
-    hoverdata = [[v.mean, v.se, v.n] for v in variantData[samples[i]]]
-    trace = go.Sunburst(labels=variants, parents = parents, values=[v.mean for v in variantData[samples[i]]],
-              branchvalues="total",
-                       customdata= hoverdata,
-                       hovertemplate='<b>Variant: %{label}<b><br>Frequency: %{value}<br>SE: %{customdata[1]:.3f}<br>n mutations: %{customdata[2]}' )
-    figForList = go.Figure(trace)
-    figForList.update_traces(marker=dict(colors=colors,line=dict(color='#000000', width=0.5)))
-    figForList.update_layout(height=250, width = 250 ,margin = dict(t=10, l=0, r=0, b=10))#,title=samples[i],margin = dict(t=0, l=0, r=0, b=0))
-    variantPieList[samples[i]] = figForList.to_html(full_html=False, include_plotlyjs='cdn')
+    #hoverdata = [[v.mean, v.se, v.n] for v in variantData[samples[i]]]
+    #trace = go.Sunburst(labels=variants, parents = parents, values=[v.mean for v in variantData[samples[i]]],
+              #branchvalues="total",
+                       #customdata= hoverdata,
+                       #hovertemplate='<b>Variant: %{label}<b><br>Frequency: %{value}<br>SE: %{customdata[1]:.3f}<br>n mutations: %{customdata[2]}' )
+    #figForList = go.Figure(trace)
+    #figForList.update_traces(marker=dict(colors=colors,line=dict(color='#000000', width=0.5)))
+    #figForList.update_layout(height=250, width = 250 ,margin = dict(t=10, l=0, r=0, b=10))#,title=samples[i],margin = dict(t=0, l=0, r=0, b=0))
+    #variantPieList[samples[i]] = figForList.to_html(full_html=False, include_plotlyjs='cdn')
     
 
 def fnct(x) :
@@ -905,11 +814,6 @@ table {
     {{ clustermap }}
     <h2>Sequencing depths</h2>
     {{ depth }}
-    <h2>Sequencing depths frequencies</h2>
-    {{ violins }}
-    <h2>Sars-Cov-2/pepper count ratios</h2>    
-    {{ pepperDF.to_html(classes='styled-table') | safe}}
-    {{ pepperfig }}
 
 
 <h2>Variants</h2>
