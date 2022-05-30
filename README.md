@@ -1,11 +1,15 @@
-# Analyse de la diversité du virus SARS-CoV-2 dans les eaux usées par séquençage
+# Analyse de la diversité du virus SARS-CoV-2 dans les eaux usées par des approches de séquençage
 
 ### Mémoire M2
 *Annexe*
 
 
 ### Comptes rendus de séquençage
+
+Dans le compte-rendu généré, la première partie ‘Samples et Parameters’ contient le nom, la date des échantillons et les paramètres utilisés pour l’analyse.
+
 Nice
+
 Europe
 
 
@@ -20,15 +24,9 @@ Pool C (2Kb)
 Pool D (4Kb)
 
 ### Langages utilisés
-Python (code Python)
-Bash (Script Bash)
+Bash (Script Bash) : analyse des données de séquençage
+Python (code Python) : représentation graphique des données
 
-### Modules Python
-pandas
-numpy
-dash-bio
-matplotlib.pyplot
-seaborn
 
 ### Calcul des variants
 Liste de mutations utilisées pour calculer les proportions des variants circulants 
