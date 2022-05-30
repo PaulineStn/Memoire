@@ -43,7 +43,7 @@ Python (code Python) : représentation graphique des données
 
 
 ### Calcul des variants
-La liste des mutations utilisées pour calculer les proportions des variants circulants est disponible sous le dossier [Lignees](Memoire/Lignees/Mutations_variants.md)
+La liste des mutations utilisées pour calculer les proportions des variants circulants est disponible sous le dossier [Lignees]
 
 
 
