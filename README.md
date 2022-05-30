@@ -6,6 +6,8 @@
 
 ### Comptes rendus de séquençage
 
+*Les comptes-rendus sont actualisés régulièrement pour ajouter les nouveaux échantillons analysés.*
+
 Comptes-rendus générés pour Nice (Station d'épuration et aéroport) et pour l'Europe.
 Les sites étudiés en Europe sont : 
 -Nice, Montpellier, Cergy, Mulhouse (France), 
